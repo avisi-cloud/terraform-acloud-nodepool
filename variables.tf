@@ -17,9 +17,9 @@ variable "cluster_slug" {
 }
 
 variable "name" {
-  type = string
+  type        = string
   description = "name of the node pool"
-  default = "worker"
+  default     = "worker"
 }
 
 variable "enable_multi_availability_zones" {

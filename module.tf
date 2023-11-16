@@ -10,7 +10,7 @@ terraform {
 data "acloud_cluster" "cluster" {
   organisation = var.organisation_slug
   environment  = var.environment_slug
-  cluster      = var.cluster_slug
+  slug         = var.cluster_slug
 }
 
 data "acloud_cloud_provider_availability_zones" "zones" {
@@ -20,9 +20,9 @@ data "acloud_cloud_provider_availability_zones" "zones" {
 }
 
 variable "availability_zone" {
-  default = ""
+  default     = ""
   description = "Default availability zone to use when the node pool is not deployed across all AZs"
-  type = string
+  type        = string
 }
 
 resource "acloud_nodepool" "pool" {
