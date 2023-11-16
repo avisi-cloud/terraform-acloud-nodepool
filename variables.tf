@@ -11,6 +11,18 @@ variable "environment_slug" {
   nullable    = false
 }
 
+variable "cloud_provider" {
+  description = "Slug of the Cloud Provider used for deploying the cluster"
+  type        = string
+  nullable    = false
+}
+
+variable "region" {
+  description = "Slug of the region of the cluster"
+  type        = string
+  nullable    = false
+}
+
 variable "cluster_slug" {
   type        = string
   description = "Slug of the cluster"

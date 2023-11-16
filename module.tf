@@ -7,16 +7,10 @@ terraform {
   }
 }
 
-data "acloud_cluster" "cluster" {
-  organisation = var.organisation_slug
-  environment  = var.environment_slug
-  slug         = var.cluster_slug
-}
-
 data "acloud_cloud_provider_availability_zones" "zones" {
   organisation   = var.organisation_slug
-  cloud_provider = data.acloud_cluster.cluster.cloud_provider
-  region         = data.acloud_cluster.cluster.region
+  cloud_provider = var.cloud_provider
+  region         = var.region
 }
 
 variable "availability_zone" {
