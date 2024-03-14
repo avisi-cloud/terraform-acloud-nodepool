@@ -1,6 +1,7 @@
 # Avisi Cloud Kubernetes Node Pool
 
 This module deploys a Kubernetes Node Pool part of an [Avisi Cloud Kubernetes](https://docs.avisi.cloud/product/kubernetes/). It can automatically deploy node pools of the same type and configuration across all availability zones for a cluster.
+
 ## Requirements
 
 | Name | Version |
@@ -34,4 +35,6 @@ This module deploys a Kubernetes Node Pool part of an [Avisi Cloud Kubernetes](h
 
 ## Outputs
 
-No outputs.
+| Name | Description |
+|------|-------------|
+| <a name="output_node_pool"></a> [node\_pool](#output\_node\_pool) | n/a |
