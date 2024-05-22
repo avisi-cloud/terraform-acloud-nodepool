@@ -36,3 +36,7 @@ resource "acloud_nodepool" "pool" {
   for_each          = var.enable_multi_availability_zones ? toset(data.acloud_cloud_provider_availability_zones.zones.availability_zones) : [var.availability_zone]
   availability_zone = each.key
 }
+
+output "node_pool" {
+  value = acloud_nodepool.pool
+}
