@@ -52,7 +52,11 @@ tolerations:
 > [runbook](https://docs.avisi.cloud/docs/runbooks/debug/new-nodes-require-reboot-after-join).
 
 The trade-off is bring-up time: installing updates and rebooting means a new node takes longer to
-become Ready, so the pool reacts more slowly to a sudden spike in demand.
+become Ready, so the pool reacts more slowly to a sudden spike in demand. See
+[Nodes That Join Fully Patched](https://docs.avisi.cloud/blog/security-updates-on-join) for the
+reasoning, and the
+[reference docs](https://docs.avisi.cloud/docs/product/overview/kubernetes/security-updates-on-join)
+for the full behaviour.
 
 ## Prerequisites
 

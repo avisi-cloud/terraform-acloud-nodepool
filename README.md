@@ -284,8 +284,13 @@ security updates during bring-up, **before** the node joins:
 | `INSTALL_AND_REBOOT` | Updates are installed, the node reboots if they require it, then it joins |
 
 AME recommends `INSTALL_AND_REBOOT`, and it will become the default once the feature leaves beta. It
-applies only to a node's first join - never to nodes already in the cluster - and it makes bring-up
-slower, which matters for autoscaled pools that need to react quickly.
+applies only to a node's first join - newly provisioned nodes, replacement nodes after auto-healing or
+a replace upgrade, and nodes added by the autoscaler - never to nodes already in the cluster. It also
+makes bring-up slower, which matters for autoscaled pools that need to react quickly.
+
+Background and the reasoning behind it:
+[Nodes That Join Fully Patched](https://docs.avisi.cloud/blog/security-updates-on-join) (blog) and the
+[reference documentation](https://docs.avisi.cloud/docs/product/overview/kubernetes/security-updates-on-join).
 
 > [!CAUTION]
 > **Autoscaling plus automatic node reboots, on a pool whose nodes join unpatched, recycles the whole
@@ -408,7 +413,7 @@ table matches. Registry pages are rebuilt when a new tag is published.
 
 - [Node pools](https://docs.avisi.cloud/docs/product/overview/kubernetes/node-pool) · [Create a node pool](https://docs.avisi.cloud/docs/product/tasks/kubernetes/create-a-new-nodepool) · [Scale a node pool](https://docs.avisi.cloud/docs/product/tasks/kubernetes/scale-node-pool)
 - [Autoscaling](https://docs.avisi.cloud/docs/product/overview/kubernetes/autoscaler) · [Upgrades and upgrade strategies](https://docs.avisi.cloud/docs/product/overview/kubernetes/upgrades) · [Node recycling](https://docs.avisi.cloud/docs/product/overview/kubernetes/node-recycling)
-- [Security updates on join](https://docs.avisi.cloud/docs/product/overview/kubernetes/security-updates-on-join) · [Scale node pools to zero](https://docs.avisi.cloud/docs/product/overview/kubernetes/scale-node-pools-to-zero)
+- [Security updates on join](https://docs.avisi.cloud/docs/product/overview/kubernetes/security-updates-on-join) · [announcement blog](https://docs.avisi.cloud/blog/security-updates-on-join) · [Scale node pools to zero](https://docs.avisi.cloud/docs/product/overview/kubernetes/scale-node-pools-to-zero)
 - [Terraform provider guide](https://docs.avisi.cloud/docs/development/terraform/terraform) · [Personal Access Tokens](https://docs.avisi.cloud/docs/product/tasks/how-to/personal-access-tokens) · [`acloud` CLI](https://docs.avisi.cloud/docs/cli)
 
 **Terraform**
