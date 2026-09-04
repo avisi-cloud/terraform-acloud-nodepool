@@ -40,7 +40,7 @@ module "workers" {
 - [Usage](#usage)
 - [How availability zones work](#how-availability-zones-work)
 - [Understanding the inputs](#understanding-the-inputs)
-- [What this module does not set](#what-this-module-does-not-set)
+- [Scaling, scheduling and lifecycle](#scaling-scheduling-and-lifecycle)
 - [Consuming the output](#consuming-the-output)
 - [Examples](#examples)
 - [Known rough edges](#known-rough-edges)
@@ -92,15 +92,15 @@ module, this is where its node pools actually come from - which is also why its 
 per-zone number.
 
 **Reach for the [`acloud_nodepool` resource](https://registry.terraform.io/providers/avisi-cloud/acloud/latest/docs/resources/nodepool)
-directly when** you need autoscaling, taints, a per-pool upgrade strategy, security updates on join,
-or a distinct pool name per zone. See [what this module does not set](#what-this-module-does-not-set).
+directly when** you need a distinct pool name per availability zone. Everything else the resource
+offers - autoscaling, taints, upgrade strategy, security updates on join - is an input here.
 
 ## Requirements
 
 | | Version |
 | --- | --- |
 | Terraform | The module declares no `required_version`. `for_each` on resources needs `>= 0.12`; Terraform 1.x is what it is used with |
-| `avisi-cloud/acloud` provider | `>= 0.3.0` is the module's floor; the product docs recommend pinning **`>= 0.10.1`** in your root module |
+| `avisi-cloud/acloud` provider | **`>= 0.12.0`** - the release that added `security_updates_on_join` |
 
 In Avisi Cloud you need an existing cluster, and a
 [Personal Access Token](https://docs.avisi.cloud/docs/product/tasks/how-to/personal-access-tokens)
@@ -218,52 +218,86 @@ merge, so a caller that sets `labels` gets only what it passed.
 **`enable_auto_healing`** maps to `node_auto_replacement`: AME replaces nodes it detects as unhealthy.
 It defaults to `true`.
 
-## What this module does not set
+## Scaling, scheduling and lifecycle
 
-The module writes ten attributes to `acloud_nodepool` and leaves the rest at their AME defaults.
-Those defaults matter:
+Beyond size and labels, four inputs control how the pool behaves over its life.
 
-| Node pool setting | Provider attribute | Result through this module |
-| --- | --- | --- |
-| **Autoscaling** | `auto_scaling`, `min_size`, `max_size` | Effectively off. `min_size` and `max_size` are pinned to `node_count`, and `auto_scaling` is never set |
-| **Upgrade strategy** | `upgrade_strategy` *(provider v0.8.0+)* | AME default, `replaceMinorInplacePatchWithoutDrain` - minor versions replace nodes, patches apply in place without draining |
-| **Security updates on join** | `security_updates_on_join` *(provider v0.12.0+)* | AME default, `OFF` - nodes join with the packages from their base image. AME recommends `INSTALL_AND_REBOOT` |
-| **Taints** | `taints { key, value, effect }` | None |
+### Autoscaling
 
-To get any of these, declare the resource directly instead of calling this module:
+By default the pool holds exactly `node_count` machines. Turn on `enable_auto_scaling` and AME's
+cluster autoscaler sizes it on utilisation instead:
 
 ```hcl
-resource "acloud_nodepool" "workers" {
-  organisation = "example-org"
-  environment  = "production"
-  cluster      = "orders"
-  name         = "workers"
-  node_size    = "t3.large"
-
-  auto_scaling             = true
-  min_size                 = 2
-  max_size                 = 6
-  node_auto_replacement    = true
-  upgrade_strategy         = "REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN"
-  security_updates_on_join = "INSTALL_AND_REBOOT"
-
-  labels = { role = "worker" }
-
-  taints {
-    key    = "dedicated"
-    value  = "batch"
-    effect = "NoSchedule"
-  }
-}
+enable_auto_scaling = true
+min_size            = 0    # scale to zero when idle
+max_size            = 10
+node_count          = 1    # starting size
 ```
 
+`min_size` and `max_size` fall back to `node_count` when left null, which is the fixed-size behaviour
+this module had before autoscaling was configurable.
+
+> [!IMPORTANT]
+> With multi-zone enabled the bounds apply to **each zone's pool**, not to the pool as a whole. A
+> `0`-`10` range across three zones is really 0 to 30 machines. Pin autoscaled pools to a single zone
+> unless you mean that.
+
+### Taints
+
+Keep a pool for specific workloads by tainting it, so only pods carrying a matching toleration are
+scheduled there:
+
+```hcl
+taints = [
+  { key = "dedicated", value = "batch", effect = "NoSchedule" },
+]
+```
+
+`effect` must be `NoSchedule`, `PreferNoSchedule` or `NoExecute`; the module validates this.
+
+### Upgrade strategy
+
+How nodes move to a new AME version. Leave it null for the AME default,
+`REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN`.
+
+| Value | Behaviour | Suits |
+| --- | --- | --- |
+| `REPLACE` | Always provision replacement nodes | Critical workloads that want a clean slate |
+| `REPLACE_MINOR_INPLACE_PATCH` | Replace on minor upgrades, patch in place after draining | Work that tolerates a drain on patches |
+| `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN` | As above, but patches without draining | **The AME default.** General-purpose services |
+| `INPLACE` | Always upgrade in place, after draining | Job-based work that reschedules cleanly |
+| `INPLACE_WITHOUT_DRAIN` | Always upgrade in place, without draining | Stateful services and long-lived connections |
+
+AME uses a surge strategy when replacing: a new node joins and passes health checks before an old one
+is drained and removed. See
+[upgrade strategies](https://docs.avisi.cloud/docs/product/overview/kubernetes/upgrades#upgrade-strategies).
+
+### Security updates on join
+
+Nodes boot from a base image whose OS packages lag behind. `security_updates_on_join` installs the
+security updates during bring-up, **before** the node joins:
+
+| Value | Behaviour |
+| --- | --- |
+| `OFF` | Nodes join with the base image packages. The AME default |
+| `INSTALL` | Updates are installed, then the node joins |
+| `INSTALL_AND_REBOOT` | Updates are installed, the node reboots if they require it, then it joins |
+
+AME recommends `INSTALL_AND_REBOOT`, and it will become the default once the feature leaves beta. It
+applies only to a node's first join - never to nodes already in the cluster - and it makes bring-up
+slower, which matters for autoscaled pools that need to react quickly.
+
 > [!CAUTION]
-> **Do not combine autoscaling with automatic node reboots while nodes join unpatched.** A node joins,
-> is patched the next morning, and is drained to reboot; the evicted pods make the autoscaler add
-> another unpatched node, and the rebooted node comes back empty and is scaled down again. The pool
-> then recycles every node, every day. Setting `security_updates_on_join` to `INSTALL_AND_REBOOT`
-> removes the cause. See the
+> **Autoscaling plus automatic node reboots, on a pool whose nodes join unpatched, recycles the whole
+> pool daily.** A node joins, is patched the next morning, and is drained to reboot; the evicted pods
+> make the autoscaler add another unpatched node, and the rebooted node comes back empty and is
+> scaled down. Setting `security_updates_on_join = "INSTALL_AND_REBOOT"` removes the cause. See the
 > [runbook](https://docs.avisi.cloud/docs/runbooks/debug/new-nodes-require-reboot-after-join).
+
+### What is still left to AME
+
+**Automatic node reboots** are configured on the cluster's *Patching* page in the Console, not through
+Terraform. So is the reboot window.
 
 ## Consuming the output
 
@@ -295,6 +329,7 @@ With multi-zone disabled the map still has one entry, keyed by whatever `availab
 | Example | Shows |
 | --- | --- |
 | [`examples/single-zone`](examples/single-zone) | One pool pinned to one availability zone; `node_count` is the literal machine count |
+| [`examples/autoscaling`](examples/autoscaling) | Autoscaling, taints, upgrade strategy and security updates on join together |
 | [`examples/multi-zone`](examples/multi-zone) | Fan-out across every zone in the region, and the resulting machine math |
 | [`examples/multiple-pools`](examples/multiple-pools) | `for_each` over a map of pools - the pattern `avisi-cloud/cluster/acloud` uses internally |
 
@@ -313,12 +348,12 @@ Honest list of things that are true of the current module.
 
 | | Impact | Workaround |
 | --- | --- | --- |
-| Pools created here cannot autoscale | `min_size` and `max_size` are pinned to `node_count`, and `auto_scaling` is never set | Declare `acloud_nodepool` directly for pools that need autoscaling |
 | Multi-zone fan-out reuses the pool name for every zone | Each zone's pool is submitted with the same `name` and differs only by `availability_zone`. The provider's own multi-AZ examples use distinct names per zone (`workers-a`, `workers-b`, `workers-c`) instead | Declare `acloud_nodepool` directly if you need per-zone names |
 | The availability zone lookup is unconditional | One API call per plan even when multi-zone is off and the result is unused | Harmless. Adding `count` to the data source would fix it |
 | `cloud_provider` and `region` are required but never written to the pool | Easy to read as node pool attributes when they only feed the zone lookup | Documented above; they must still match the cluster |
 | Single-zone pools key state on `""` by default | `module.x.acloud_nodepool.pool[""]` is an odd address to work with | Set `availability_zone` explicitly for a readable key |
-| Provider floor is `>= 0.3.0` | Older than the `>= 0.10.1` the product docs recommend | Pin a newer version in your own `required_providers` |
+| Provider floor raised to `>= 0.12.0` | Required by `security_updates_on_join`. Configurations pinned to an older provider will not resolve | Upgrade the provider; 0.12.0 is from September 2026 |
+| Autoscaler bounds are per zone under multi-zone | `min_size`/`max_size` apply to each zone's pool, so the totals multiply | Pin autoscaled pools to one availability zone |
 
 ## Troubleshooting
 
@@ -391,7 +426,7 @@ Run `make docs` after changing any variable, output, resource or module block.
 
 | Name | Version |
 | ---- | ------- |
-| <a name="requirement_acloud"></a> [acloud](#requirement\_acloud) | >= 0.3.0 |
+| <a name="requirement_acloud"></a> [acloud](#requirement\_acloud) | >= 0.12.0 |
 
 ### Providers
 
@@ -421,10 +456,16 @@ Run `make docs` after changing any variable, output, resource or module block.
 | <a name="input_annotations"></a> [annotations](#input\_annotations) | Kubernetes node annotations applied to every node in the pool. Typically consumed by automation rather than by the scheduler. | `map(string)` | `{}` | no |
 | <a name="input_availability_zone"></a> [availability\_zone](#input\_availability\_zone) | Availability zone for the node pool when `enable_multi_availability_zones` is false, for example `eu-west-1a`. Ignored when multi-zone is enabled, because the pool is then created in every zone. The empty default lets AME place the pool. Can only be set at creation time. | `string` | `""` | no |
 | <a name="input_enable_auto_healing"></a> [enable\_auto\_healing](#input\_enable\_auto\_healing) | Let AME automatically replace nodes in this pool that it detects as unhealthy. Maps to `node_auto_replacement` on the underlying `acloud_nodepool` resource. | `bool` | `true` | no |
+| <a name="input_enable_auto_scaling"></a> [enable\_auto\_scaling](#input\_enable\_auto\_scaling) | Let the AME cluster autoscaler size this node pool based on utilisation, between `min_size` and `max_size`. When false, the pool stays at `node_count` machines. | `bool` | `false` | no |
 | <a name="input_enable_multi_availability_zones"></a> [enable\_multi\_availability\_zones](#input\_enable\_multi\_availability\_zones) | Create one node pool in every availability zone of `region` instead of a single pool. Each zone's pool is sized `node_count`, so the machine count is `node_count` multiplied by the number of zones. When false, a single pool is created in `availability_zone`. | `bool` | `false` | no |
 | <a name="input_labels"></a> [labels](#input\_labels) | Kubernetes node labels applied to every node in the pool. Use them for scheduling with `nodeSelector` or node affinity. | `map(string)` | `{}` | no |
+| <a name="input_max_size"></a> [max\_size](#input\_max\_size) | Maximum number of machines the autoscaler may scale the pool up to. Only used when `enable_auto_scaling` is true. Defaults to `node_count` when null. | `number` | `null` | no |
+| <a name="input_min_size"></a> [min\_size](#input\_min\_size) | Minimum number of machines the autoscaler may scale the pool down to. Only used when `enable_auto_scaling` is true. Defaults to `node_count` when null. | `number` | `null` | no |
 | <a name="input_name"></a> [name](#input\_name) | Name of the node pool. AME uses it for the Kubernetes node role label on every node in the pool. With `enable_multi_availability_zones` enabled, the same name is used for each zone's pool - they differ only by availability zone. | `string` | `"worker"` | no |
 | <a name="input_node_count"></a> [node\_count](#input\_node\_count) | Number of machines in the node pool. With `enable_multi_availability_zones` enabled this is the count *per availability zone*, so the pool provisions this many nodes in every zone of the region. | `number` | `1` | no |
+| <a name="input_security_updates_on_join"></a> [security\_updates\_on\_join](#input\_security\_updates\_on\_join) | Whether OS security updates are installed while a node is provisioned, before it joins the cluster. `OFF` joins with the base image packages; `INSTALL` installs updates first; `INSTALL_AND_REBOOT` also reboots when the updates require it. AME recommends `INSTALL_AND_REBOOT`, which avoids a fresh node being drained for a reboot shortly after joining. Applies only to a node's first join, never to existing nodes, and it makes bring-up slower. Leave null to use the AME default, `OFF`. Requires provider >= 0.12.0. | `string` | `null` | no |
+| <a name="input_taints"></a> [taints](#input\_taints) | Kubernetes taints applied to every node in the pool, so that only pods with a matching toleration are scheduled onto it. `effect` must be one of `NoSchedule`, `PreferNoSchedule` or `NoExecute`. | <pre>list(object({<br/>    key    = string<br/>    value  = string<br/>    effect = string<br/>  }))</pre> | `[]` | no |
+| <a name="input_upgrade_strategy"></a> [upgrade\_strategy](#input\_upgrade\_strategy) | How nodes in this pool are upgraded. `REPLACE` always provisions replacement nodes; `REPLACE_MINOR_INPLACE_PATCH` replaces on minor upgrades and patches in place after draining; `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN` does the same without draining; `INPLACE` always upgrades in place after draining; `INPLACE_WITHOUT_DRAIN` upgrades in place without draining. Leave null to use the AME default, `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN`. | `string` | `null` | no |
 
 ### Outputs
 

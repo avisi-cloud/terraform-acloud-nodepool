@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     acloud = {
-      version = ">= 0.3.0"
+      version = ">= 0.12.0"
       source  = "avisi-cloud/acloud"
     }
   }
@@ -23,8 +23,8 @@ data "acloud_cloud_provider_availability_zones" "zones" {
 # same name, node size and node count - they differ only by zone, which is why
 # `node_count` is a *per zone* number rather than a pool total.
 #
-# `min_size` and `max_size` are pinned to `node_count` and `auto_scaling` is
-# never set, so pools created by this module do not autoscale.
+# `min_size` and `max_size` fall back to `node_count`, which reproduces the
+# fixed-size behaviour this module had before autoscaling was configurable.
 resource "acloud_nodepool" "pool" {
   organisation = var.organisation_slug
   environment  = var.environment_slug
@@ -32,12 +32,26 @@ resource "acloud_nodepool" "pool" {
   name         = var.name
   node_count   = var.node_count
   node_size    = var.node_size
-  min_size     = var.node_count
-  max_size     = var.node_count
+
+  auto_scaling = var.enable_auto_scaling
+  min_size     = coalesce(var.min_size, var.node_count)
+  max_size     = coalesce(var.max_size, var.node_count)
 
   labels                = var.labels
   annotations           = var.annotations
   node_auto_replacement = var.enable_auto_healing
+
+  upgrade_strategy         = var.upgrade_strategy
+  security_updates_on_join = var.security_updates_on_join
+
+  dynamic "taints" {
+    for_each = var.taints
+    content {
+      key    = taints.value.key
+      value  = taints.value.value
+      effect = taints.value.effect
+    }
+  }
 
   for_each          = var.enable_multi_availability_zones ? toset(data.acloud_cloud_provider_availability_zones.zones.availability_zones) : [var.availability_zone]
   availability_zone = each.key

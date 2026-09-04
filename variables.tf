@@ -95,3 +95,82 @@ variable "enable_auto_healing" {
   type        = bool
   default     = true
 }
+
+# ---------------------------------------------------------------------------
+# Scaling
+#
+# Leave `enable_auto_scaling` off and the pool holds exactly `node_count`
+# machines. Turn it on and AME's cluster autoscaler moves the pool between
+# `min_size` and `max_size` based on utilisation.
+# ---------------------------------------------------------------------------
+
+variable "enable_auto_scaling" {
+  description = "Let the AME cluster autoscaler size this node pool based on utilisation, between `min_size` and `max_size`. When false, the pool stays at `node_count` machines."
+  type        = bool
+  default     = false
+}
+
+variable "min_size" {
+  description = "Minimum number of machines the autoscaler may scale the pool down to. Only used when `enable_auto_scaling` is true. Defaults to `node_count` when null."
+  type        = number
+  default     = null
+}
+
+variable "max_size" {
+  description = "Maximum number of machines the autoscaler may scale the pool up to. Only used when `enable_auto_scaling` is true. Defaults to `node_count` when null."
+  type        = number
+  default     = null
+}
+
+# ---------------------------------------------------------------------------
+# Lifecycle and scheduling
+# ---------------------------------------------------------------------------
+
+variable "upgrade_strategy" {
+  description = "How nodes in this pool are upgraded. `REPLACE` always provisions replacement nodes; `REPLACE_MINOR_INPLACE_PATCH` replaces on minor upgrades and patches in place after draining; `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN` does the same without draining; `INPLACE` always upgrades in place after draining; `INPLACE_WITHOUT_DRAIN` upgrades in place without draining. Leave null to use the AME default, `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN`."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.upgrade_strategy == null || contains([
+      "REPLACE",
+      "REPLACE_MINOR_INPLACE_PATCH",
+      "REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN",
+      "INPLACE",
+      "INPLACE_WITHOUT_DRAIN",
+    ], coalesce(var.upgrade_strategy, "REPLACE"))
+    error_message = "upgrade_strategy must be one of REPLACE, REPLACE_MINOR_INPLACE_PATCH, REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN, INPLACE, INPLACE_WITHOUT_DRAIN, or null."
+  }
+}
+
+variable "security_updates_on_join" {
+  description = "Whether OS security updates are installed while a node is provisioned, before it joins the cluster. `OFF` joins with the base image packages; `INSTALL` installs updates first; `INSTALL_AND_REBOOT` also reboots when the updates require it. AME recommends `INSTALL_AND_REBOOT`, which avoids a fresh node being drained for a reboot shortly after joining. Applies only to a node's first join, never to existing nodes, and it makes bring-up slower. Leave null to use the AME default, `OFF`. Requires provider >= 0.12.0."
+  type        = string
+  default     = null
+
+  validation {
+    condition = var.security_updates_on_join == null || contains([
+      "OFF",
+      "INSTALL",
+      "INSTALL_AND_REBOOT",
+    ], coalesce(var.security_updates_on_join, "OFF"))
+    error_message = "security_updates_on_join must be one of OFF, INSTALL, INSTALL_AND_REBOOT, or null."
+  }
+}
+
+variable "taints" {
+  description = "Kubernetes taints applied to every node in the pool, so that only pods with a matching toleration are scheduled onto it. `effect` must be one of `NoSchedule`, `PreferNoSchedule` or `NoExecute`."
+  type = list(object({
+    key    = string
+    value  = string
+    effect = string
+  }))
+  default = []
+
+  validation {
+    condition = alltrue([
+      for t in var.taints : contains(["NoSchedule", "PreferNoSchedule", "NoExecute"], t.effect)
+    ])
+    error_message = "Each taint effect must be NoSchedule, PreferNoSchedule or NoExecute."
+  }
+}
