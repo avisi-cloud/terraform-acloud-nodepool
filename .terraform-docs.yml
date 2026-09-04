@@ -1,0 +1,61 @@
+# terraform-docs configuration for the avisi-cloud/nodepool/acloud module.
+# Reference: https://terraform-docs.io/user-guide/configuration/
+#
+# `make docs` regenerates the block between the BEGIN_TF_DOCS / END_TF_DOCS
+# markers in README.md, for this module and for every example under examples/.
+# Everything outside those markers is written by hand and is never touched.
+#
+# Directory traversal lives in the Makefile (`--recursive --recursive-path
+# examples`) rather than here, so that `make docs-preview` can still render a
+# single module to stdout - terraform-docs rejects an empty --output-file while
+# recursion is enabled.
+
+formatter: markdown table
+version: ">= 0.16.0"
+
+output:
+  file: README.md
+  mode: inject
+  template: |-
+    <!-- BEGIN_TF_DOCS -->
+    {{ .Content }}
+    <!-- END_TF_DOCS -->
+
+# One "Reference" section that nests the generated tables underneath it, so the
+# hand-written prose above keeps the top-level heading structure of the README.
+content: |-
+  ## Reference
+
+  Generated from the `.tf` files in this directory with [terraform-docs](https://terraform-docs.io).
+  Run `make docs` after changing any variable, output, resource or module block.
+
+  {{ .Requirements }}
+
+  {{ .Providers }}
+
+  {{ .Modules }}
+
+  {{ .Resources }}
+
+  {{ .Inputs }}
+
+  {{ .Outputs }}
+
+# Required inputs first: it matches how the Terraform Registry groups the
+# Inputs tab, so both views tell the same story.
+sort:
+  enabled: true
+  by: required
+
+settings:
+  anchor: true
+  default: true
+  escape: true
+  hide-empty: true
+  html: true
+  indent: 3
+  lockfile: true
+  read-comments: true
+  required: true
+  sensitive: true
+  type: true

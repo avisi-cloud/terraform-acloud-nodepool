@@ -1,67 +1,97 @@
+# ---------------------------------------------------------------------------
+# Placement
+#
+# The cluster must already exist. This module attaches a node pool to it; it
+# never creates or modifies the cluster itself.
+# ---------------------------------------------------------------------------
 
 variable "organisation_slug" {
-  description = "A unique identifier for the organisation. This is used to distinguish resources across different organisations. Required."
+  description = "Slug of the Avisi Cloud organisation that owns the cluster. This is the short identifier used in Console URLs and API paths, not the display name. Run `acloud config get-organisations` to list the slugs you have access to."
   type        = string
   nullable    = false
 }
 
 variable "environment_slug" {
-  description = "A unique identifier for the environment within the organisation. Required."
-  type        = string
-  nullable    = false
-}
-
-variable "cloud_provider" {
-  description = "Slug of the Cloud Provider used for deploying the cluster"
-  type        = string
-  nullable    = false
-}
-
-variable "region" {
-  description = "Slug of the region of the cluster"
+  description = "Slug of the AME environment the cluster lives in. An environment groups clusters inside an organisation, for example `production` or `staging`."
   type        = string
   nullable    = false
 }
 
 variable "cluster_slug" {
+  description = "Slug of the cluster to attach the node pool to. AME derives this from the cluster's display name; it is the identifier shown on the cluster page and used by `acloud` commands. Can only be set at creation time."
   type        = string
-  description = "Slug of the cluster"
 }
 
-variable "name" {
+# ---------------------------------------------------------------------------
+# Availability zone resolution
+#
+# `cloud_provider` and `region` are not written to the node pool. They exist
+# only so the module can ask AME which availability zones the region has, which
+# is what `enable_multi_availability_zones` fans out over.
+# ---------------------------------------------------------------------------
+
+variable "cloud_provider" {
+  description = "Slug of the AME cloud provider the cluster runs on, for example `aws`, `hetzner` or `cyso-cloud-ams2`. Used together with `region` to look up the region's availability zones - it is not an attribute of the node pool itself. Run `acloud cloud-providers get` to list the slugs available to your organisation."
   type        = string
-  description = "name of the node pool"
-  default     = "worker"
+  nullable    = false
+}
+
+variable "region" {
+  description = "Slug of the cloud provider region the cluster is deployed in, for example `eu-west-1`, `fsn1` or `ams2`. Used together with `cloud_provider` to look up the region's availability zones. Must match the region the cluster was created in."
+  type        = string
+  nullable    = false
 }
 
 variable "enable_multi_availability_zones" {
+  description = "Create one node pool in every availability zone of `region` instead of a single pool. Each zone's pool is sized `node_count`, so the machine count is `node_count` multiplied by the number of zones. When false, a single pool is created in `availability_zone`."
   type        = bool
   default     = false
-  description = "deploy the node pool in all availability zones within the Cluster's cloud provider region"
 }
 
-variable "node_count" {
-  type        = number
-  description = "Number of machines in the node pool"
-  default     = 1
+variable "availability_zone" {
+  description = "Availability zone for the node pool when `enable_multi_availability_zones` is false, for example `eu-west-1a`. Ignored when multi-zone is enabled, because the pool is then created in every zone. The empty default lets AME place the pool. Can only be set at creation time."
+  type        = string
+  default     = ""
+}
+
+# ---------------------------------------------------------------------------
+# Node pool configuration
+#
+# Applied identically to every node in the pool, and to every zone's pool when
+# multi-zone is enabled.
+# ---------------------------------------------------------------------------
+
+variable "name" {
+  description = "Name of the node pool. AME uses it for the Kubernetes node role label on every node in the pool. With `enable_multi_availability_zones` enabled, the same name is used for each zone's pool - they differ only by availability zone."
+  type        = string
+  default     = "worker"
 }
 
 variable "node_size" {
+  description = "Cloud provider machine type for nodes in the pool, for example `t3.medium` (AWS), `cx33` (Hetzner) or `s5.small` (Cyso Cloud AMS2). The type must be offered in `region` for the cluster's cloud account."
   type        = string
-  description = "Machine Size for nodes in the worker pool"
+}
+
+variable "node_count" {
+  description = "Number of machines in the node pool. With `enable_multi_availability_zones` enabled this is the count *per availability zone*, so the pool provisions this many nodes in every zone of the region."
+  type        = number
+  default     = 1
 }
 
 variable "labels" {
-  description = "Custom node labels for nodes within the node pool"
+  description = "Kubernetes node labels applied to every node in the pool. Use them for scheduling with `nodeSelector` or node affinity."
+  type        = map(string)
   default     = {}
 }
 
 variable "annotations" {
-  description = "Custom node annotations for nodes within the node pool"
+  description = "Kubernetes node annotations applied to every node in the pool. Typically consumed by automation rather than by the scheduler."
+  type        = map(string)
   default     = {}
 }
 
 variable "enable_auto_healing" {
-  description = "Enable node auto healing for nodes in the node pool"
+  description = "Let AME automatically replace nodes in this pool that it detects as unhealthy. Maps to `node_auto_replacement` on the underlying `acloud_nodepool` resource."
+  type        = bool
   default     = true
 }
