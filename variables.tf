@@ -62,7 +62,7 @@ variable "availability_zone" {
 # ---------------------------------------------------------------------------
 
 variable "name" {
-  description = "Name of the node pool. AME uses it for the Kubernetes node role label on every node in the pool. With `enable_multi_availability_zones` enabled, the same name is used for each zone's pool - they differ only by availability zone."
+  description = "Name of the node pool. AME uses it for the Kubernetes node role label on every node in the pool. With `enable_multi_availability_zones` enabled, the same name is used for each zone's pool - they differ only by availability zone. Note that the provider does not send the name when it updates an existing pool, so renaming a pool has no effect until it is recreated."
   type        = string
   default     = "worker"
 }
@@ -73,7 +73,7 @@ variable "node_size" {
 }
 
 variable "node_count" {
-  description = "Number of machines in the node pool. With `enable_multi_availability_zones` enabled this is the count *per availability zone*, so the pool provisions this many nodes in every zone of the region."
+  description = "Number of machines in the node pool. With `enable_multi_availability_zones` enabled this is the count *per availability zone*, so the pool provisions this many nodes in every zone of the region. This sizes the pool only while `enable_auto_scaling` is false: the provider never sends a node count to AME, it sends `min_size` and `max_size` and pins both to this value when autoscaling is off. With autoscaling on, the pool is sized by `min_size` and `max_size` and this value is ignored."
   type        = number
   default     = 1
 }
@@ -91,7 +91,7 @@ variable "annotations" {
 }
 
 variable "enable_auto_healing" {
-  description = "Let AME automatically replace nodes in this pool that it detects as unhealthy. Maps to `node_auto_replacement` on the underlying `acloud_nodepool` resource."
+  description = "Let AME automatically replace nodes in this pool that it detects as unhealthy. Maps to `node_auto_replacement` on the underlying `acloud_nodepool` resource. Note that the provider does not send this attribute when it updates an existing pool, so changing it afterwards has no effect until the pool is recreated."
   type        = bool
   default     = true
 }
@@ -105,19 +105,19 @@ variable "enable_auto_healing" {
 # ---------------------------------------------------------------------------
 
 variable "enable_auto_scaling" {
-  description = "Let the AME cluster autoscaler size this node pool based on utilisation, between `min_size` and `max_size`. When false, the pool stays at `node_count` machines."
+  description = "Let the AME cluster autoscaler size this node pool based on utilisation, between `min_size` and `max_size`. When false, the pool stays at `node_count` machines. Note that the provider does not send this attribute when it updates an existing pool, so turning autoscaling on or off afterwards has no effect until the pool is recreated."
   type        = bool
   default     = false
 }
 
 variable "min_size" {
-  description = "Minimum number of machines the autoscaler may scale the pool down to. Only used when `enable_auto_scaling` is true. Defaults to `node_count` when null."
+  description = "Minimum number of machines the autoscaler may scale the pool down to. Only used when `enable_auto_scaling` is true; with autoscaling off the provider pins the bounds to `node_count`. Defaults to `node_count` when null. With `enable_multi_availability_zones` enabled this bound applies to *each zone's* pool, so the cluster-wide minimum is this value multiplied by the number of zones."
   type        = number
   default     = null
 }
 
 variable "max_size" {
-  description = "Maximum number of machines the autoscaler may scale the pool up to. Only used when `enable_auto_scaling` is true. Defaults to `node_count` when null."
+  description = "Maximum number of machines the autoscaler may scale the pool up to. Only used when `enable_auto_scaling` is true; with autoscaling off the provider pins the bounds to `node_count`. Defaults to `node_count` when null. With `enable_multi_availability_zones` enabled this bound applies to *each zone's* pool, so the cluster-wide maximum is this value multiplied by the number of zones."
   type        = number
   default     = null
 }
@@ -127,24 +127,25 @@ variable "max_size" {
 # ---------------------------------------------------------------------------
 
 variable "upgrade_strategy" {
-  description = "How nodes in this pool are upgraded. `REPLACE` always provisions replacement nodes; `REPLACE_MINOR_INPLACE_PATCH` replaces on minor upgrades and patches in place after draining; `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN` does the same without draining; `INPLACE` always upgrades in place after draining; `INPLACE_WITHOUT_DRAIN` upgrades in place without draining. Leave null to use the AME default, `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN`."
+  description = "How nodes in this pool are upgraded. `REPLACE` always provisions replacement nodes; `REPLACE_MINOR_INPLACE_PATCH` replaces on minor upgrades and patches in place after draining; `REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN` does the same without draining; `INPLACE` always upgrades in place after draining; `INPLACE_WITHOUT_DRAIN` upgrades in place without draining. This value is always sent to AME and cannot be left unset: the provider rejects an empty upgrade strategy when it creates the node pool. The default here matches AME's own default for normal clusters; on a Bring Your Own Node cluster AME would default to `INPLACE` instead, so set that explicitly on a BYON pool. The product documentation spells these values in camelCase (`replaceMinorInplacePatchWithoutDrain`), but the API and this module take the uppercase form, and it is matched case-sensitively. Note that the provider does not send this attribute when it updates an existing pool, so changing it afterwards has no effect until the pool is recreated."
   type        = string
-  default     = null
+  default     = "REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN"
+  nullable    = false
 
   validation {
-    condition = var.upgrade_strategy == null || contains([
+    condition = contains([
       "REPLACE",
       "REPLACE_MINOR_INPLACE_PATCH",
       "REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN",
       "INPLACE",
       "INPLACE_WITHOUT_DRAIN",
-    ], coalesce(var.upgrade_strategy, "REPLACE"))
-    error_message = "upgrade_strategy must be one of REPLACE, REPLACE_MINOR_INPLACE_PATCH, REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN, INPLACE, INPLACE_WITHOUT_DRAIN, or null."
+    ], var.upgrade_strategy)
+    error_message = "upgrade_strategy must be one of REPLACE, REPLACE_MINOR_INPLACE_PATCH, REPLACE_MINOR_INPLACE_PATCH_WITHOUT_DRAIN, INPLACE, INPLACE_WITHOUT_DRAIN."
   }
 }
 
 variable "security_updates_on_join" {
-  description = "Whether OS security updates are installed while a node is provisioned, before it joins the cluster. `OFF` joins with the base image packages; `INSTALL` installs updates first; `INSTALL_AND_REBOOT` also reboots when the updates require it. AME recommends `INSTALL_AND_REBOOT`, which avoids a fresh node being drained for a reboot shortly after joining. Applies only to a node's first join, never to existing nodes, and it makes bring-up slower. Leave null to use the AME default, `OFF`. Requires provider >= 0.12.0."
+  description = "Whether OS security updates are installed while a node is provisioned, before it joins the cluster. `OFF` joins with the base image packages; `INSTALL` installs updates first; `INSTALL_AND_REBOOT` also reboots when the updates require it. AME recommends `INSTALL_AND_REBOOT`, and states it will become the default once the feature leaves beta. Applies only to a node's first join, never to existing nodes, and it makes bring-up slower. This is a beta feature: AME documents that its values and defaults can still change, and it needs an AME release that supports it, not only provider >= 0.12.0. Leave null to send nothing, which the provider turns into `OFF`."
   type        = string
   default     = null
 

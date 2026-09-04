@@ -5,16 +5,22 @@ headline feature, and the one whose arithmetic catches people out.
 
 ## What it creates
 
-`eu-west-1` exposes three availability zones (confirm yours with `acloud cloud-providers get`).
-Because multi-zone is enabled, the module creates one node pool per zone:
+Because multi-zone is enabled, the module creates one node pool per availability zone. The figures
+below assume a three-zone region:
 
 | | |
 | --- | --- |
-| `acloud_nodepool` | 3 - `eu-west-1a`, `eu-west-1b`, `eu-west-1c` |
+| `acloud_nodepool` | one per zone the region publishes - three in a three-zone region |
 | `node_count` | 2 **per zone** |
-| Machines | **6** × `t3.medium` |
+| Machines | **6** × `t3.medium` in a three-zone region |
 
-> [!IMPORTANT]
+The zone list comes from AME rather than from the cloud provider directly: a region only fans out if
+AME publishes availability zones against that exact region slug, and a provider's multi-zone region
+may be published under a slug of its own. Confirm with `acloud cloud-providers get` before assuming
+a count. If the region returns no zones at all, the module now fails at plan time instead of quietly
+creating nothing.
+
+> **Important:**
 > `node_count = 2` does not mean two machines. It means two machines *in every zone*. Halve the
 > count, or switch to [`examples/single-zone`](../single-zone), if that is more capacity than you
 > want.
@@ -73,7 +79,7 @@ Run `make docs` after changing any variable, output, resource or module block.
 
 | Name | Version |
 | ---- | ------- |
-| <a name="requirement_acloud"></a> [acloud](#requirement\_acloud) | >= 0.10.1 |
+| <a name="requirement_acloud"></a> [acloud](#requirement\_acloud) | >= 0.12.0 |
 
 
 

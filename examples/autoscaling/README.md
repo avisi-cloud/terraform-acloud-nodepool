@@ -44,7 +44,7 @@ tolerations:
     effect: NoSchedule
 ```
 
-> [!IMPORTANT]
+> **Important:**
 > `security_updates_on_join = "INSTALL_AND_REBOOT"` is not decoration on an autoscaled pool. Without
 > it, nodes join unpatched, get patched the next morning and are drained to reboot; the evicted pods
 > make the autoscaler add another unpatched node, and the rebooted node comes back empty and is

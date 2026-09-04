@@ -2,7 +2,7 @@ terraform {
   required_providers {
     acloud = {
       source  = "avisi-cloud/acloud"
-      version = ">= 0.10.1"
+      version = ">= 0.12.0"
     }
   }
 }

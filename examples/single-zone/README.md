@@ -67,7 +67,7 @@ Run `make docs` after changing any variable, output, resource or module block.
 
 | Name | Version |
 | ---- | ------- |
-| <a name="requirement_acloud"></a> [acloud](#requirement\_acloud) | >= 0.10.1 |
+| <a name="requirement_acloud"></a> [acloud](#requirement\_acloud) | >= 0.12.0 |
 
 
 

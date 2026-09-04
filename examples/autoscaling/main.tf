@@ -78,11 +78,13 @@ module "batch" {
   name      = "batch"
   node_size = "t3.large"
 
-  # AME's cluster autoscaler sizes the pool on utilisation.
+  # AME's cluster autoscaler sizes the pool on utilisation, between the bounds
+  # below. `node_count` is deliberately not set here: with autoscaling enabled
+  # the provider sends only min_size and max_size, so a node count would be
+  # ignored rather than acting as a starting size.
   enable_auto_scaling = true
   min_size            = 0
   max_size            = 10
-  node_count          = 1
 
   # Only pods that tolerate this taint are scheduled here.
   taints = [
@@ -98,6 +100,8 @@ module "batch" {
   security_updates_on_join = "INSTALL_AND_REBOOT"
 
   # Batch work tolerates a drain, so upgrade in place rather than replacing.
+  # This is always sent: an unset upgrade strategy is rejected when the pool is
+  # created, so the module defaults it to AME's own default rather than null.
   upgrade_strategy = "INPLACE"
 
   labels = {
